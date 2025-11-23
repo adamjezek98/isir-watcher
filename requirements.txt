@@ -1,0 +1,11 @@
+# Database and ORM
+sqlalchemy==2.0.23
+alembic==1.13.0
+
+# HTTP requests for website scraping
+requests==2.31.0
+beautifulsoup4==4.12.2
+
+# Utilities
+python-dotenv==1.0.0
+
