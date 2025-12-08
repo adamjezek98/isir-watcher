@@ -31,6 +31,78 @@ class ReportGenerator:
         self.documents_dir.mkdir(exist_ok=True)
         logger.info(f"Output directories ensured: {self.output_dir}")
     
+    def generate_index(self, db: Session):
+        """Generate index page with overview of all watched entities."""
+        logger.info("Generating index page")
+        
+        # Get all watched entities sorted by last_modified
+        entities = db.query(WatchedEntity).order_by(
+            WatchedEntity.last_modified.desc()
+        ).all()
+        
+        if not entities:
+            logger.info("No entities to include in index")
+            return
+        
+        # Collect entity data
+        entity_data = []
+        for entity in entities:
+            # Count documents
+            doc_count = (
+                db.query(BeforeBankruptcyDocument).filter_by(watched_entity_id=entity.id).count() +
+                db.query(AfterBankruptcyDocument).filter_by(watched_entity_id=entity.id).count() +
+                db.query(OtherDocument).filter_by(watched_entity_id=entity.id).count() +
+                db.query(ApplicationDocument).filter_by(watched_entity_id=entity.id).count() +
+                db.query(DisputeDocument).filter_by(watched_entity_id=entity.id).count()
+            )
+            
+            # Get latest 3 documents across all types with section info
+            all_docs_with_section = []
+            
+            # Get documents from each type and tag with section letter
+            for doc in db.query(BeforeBankruptcyDocument).filter_by(
+                watched_entity_id=entity.id
+            ).order_by(BeforeBankruptcyDocument.publish_date.desc()).limit(3).all():
+                all_docs_with_section.append(('A', doc))
+            
+            for doc in db.query(AfterBankruptcyDocument).filter_by(
+                watched_entity_id=entity.id
+            ).order_by(AfterBankruptcyDocument.publish_date.desc()).limit(3).all():
+                all_docs_with_section.append(('B', doc))
+            
+            for doc in db.query(OtherDocument).filter_by(
+                watched_entity_id=entity.id
+            ).order_by(OtherDocument.publish_date.desc()).limit(3).all():
+                all_docs_with_section.append(('C', doc))
+            
+            for doc in db.query(ApplicationDocument).filter_by(
+                watched_entity_id=entity.id
+            ).order_by(ApplicationDocument.publish_date.desc()).limit(3).all():
+                all_docs_with_section.append(('D', doc))
+            
+            for doc in db.query(DisputeDocument).filter_by(
+                watched_entity_id=entity.id
+            ).order_by(DisputeDocument.publish_date.desc()).limit(3).all():
+                all_docs_with_section.append(('P', doc))
+            
+            # Sort all documents by publish date and take top 3
+            all_docs_with_section.sort(key=lambda x: x[1].publish_date, reverse=True)
+            latest_docs = all_docs_with_section[:3]
+            
+            entity_data.append({
+                'entity': entity,
+                'doc_count': doc_count,
+                'latest_docs': latest_docs
+            })
+        
+        # Generate HTML
+        html = self._generate_index_html(entity_data)
+        
+        # Write to file
+        index_path = self.output_dir / "index.html"
+        index_path.write_text(html, encoding='utf-8')
+        logger.info(f"Index page generated: {index_path}")
+    
     def generate_entity_report(self, db: Session, entity: WatchedEntity):
         """Generate HTML report for a single entity."""
         logger.info(f"Generating report for entity: {entity.name}")
@@ -265,17 +337,17 @@ class ReportGenerator:
                 <div class="number">{len(after_bankruptcy)}</div>
                 <div class="label">After Bankruptcy (B)</div>
             </a>
-            <a href="#section-c" class="stat-box">
-                <div class="number">{len(other_docs)}</div>
-                <div class="label">Other Documents (C)</div>
+             <a href="#section-c" class="stat-box">
+                <div class="number">{len(disputes)}</div>
+                <div class="label">Disputes (C)</div>
             </a>
-            <a href="#section-d" class="stat-box">
-                <div class="number">{len(applications)}</div>
-                <div class="label">Applications (D)</div>
+           <a href="#section-d" class="stat-box">
+                <div class="number">{len(other_docs)}</div>
+                <div class="label">Other Documents (D)</div>
             </a>
             <a href="#section-p" class="stat-box">
-                <div class="number">{len(disputes)}</div>
-                <div class="label">Disputes (P)</div>
+                <div class="number">{len(applications)}</div>
+                <div class="label">Applications (P)</div>
             </a>
         </div>
     </div>
@@ -287,12 +359,13 @@ class ReportGenerator:
             all_docs_with_section.append(('A', doc, False, False))
         for doc in after_bankruptcy:
             all_docs_with_section.append(('B', doc, False, False))
-        for doc in other_docs:
-            all_docs_with_section.append(('C', doc, False, False))
-        for doc in applications:
-            all_docs_with_section.append(('D', doc, True, False))
         for doc in disputes:
-            all_docs_with_section.append(('P', doc, False, True))
+            all_docs_with_section.append(('C', doc, False, True))
+        for doc in other_docs:
+            all_docs_with_section.append(('D', doc, False, False))
+        for doc in applications:
+            all_docs_with_section.append(('P', doc, True, False))
+
         
         # Sort by publish date and take top 10
         all_docs_with_section.sort(key=lambda x: x[1].publish_date if x[1].publish_date else datetime.min.replace(tzinfo=timezone.utc), reverse=True)
@@ -303,19 +376,25 @@ class ReportGenerator:
         
         # Add sections for each document type
         if before_bankruptcy:
-            html += self._generate_document_section("Section A - Before Bankruptcy Documents", before_bankruptcy, section_letter='A', section_id='section-a')
+            html += self._generate_document_section("Section A - Before Bankruptcy Documents", 
+            before_bankruptcy, section_letter='A', section_id='section-a')
         
         if after_bankruptcy:
-            html += self._generate_document_section("Section B - After Bankruptcy Documents", after_bankruptcy, section_letter='B', section_id='section-b')
-        
-        if other_docs:
-            html += self._generate_document_section("Section C - Other Documents", other_docs, section_letter='C', section_id='section-c')
-        
-        if applications:
-            html += self._generate_document_section("Section D - Application Documents", applications, section_letter='D', section_id='section-d', show_creditor=True)
+            html += self._generate_document_section("Section B - After Bankruptcy Documents",
+             after_bankruptcy, section_letter='B', section_id='section-b')
         
         if disputes:
-            html += self._generate_document_section("Section P - Dispute Documents", disputes, section_letter='P', section_id='section-p', show_dispute_number=True)
+            html += self._generate_document_section("Section C - Dispute Documents",
+             disputes, section_letter='C', section_id='section-c', show_dispute_number=True)
+
+        if other_docs:
+            html += self._generate_document_section("Section D - Other Documents",
+             other_docs, section_letter='D', section_id='section-d')
+        
+        if applications:
+            html += self._generate_document_section("Section P - Application Documents",
+             applications, section_letter='P', section_id='section-p', show_creditor=True)
+        
         
         html += """
 </body>
@@ -346,11 +425,8 @@ class ReportGenerator:
             
             publish_date = doc.publish_date.strftime('%Y-%m-%d %H:%M') if doc.publish_date else 'N/A'
             
-            # Format ID with section letter (only for A/B/C/D, P already has it)
-            if section_letter in ['A', 'B', 'C', 'D']:
-                display_id = f"{section_letter} - {doc.isir_document_id}"
-            else:
-                display_id = doc.isir_document_id
+            # Get HTML-formatted document ID
+            display_id = doc.get_html_document_id()
             
             # Generate document links (both local and ISIR)
             doc_links = self._generate_document_links(doc)
@@ -437,11 +513,8 @@ class ReportGenerator:
             
             publish_date = doc.publish_date.strftime('%Y-%m-%d %H:%M') if doc.publish_date else 'N/A'
             
-            # Format ID with section letter (only for A/B/C/D, P already has it)
-            if section_letter in ['A', 'B', 'C', 'D']:
-                display_id = f"{section_letter} - {doc.isir_document_id}"
-            else:
-                display_id = doc.isir_document_id
+            # Get HTML-formatted document ID
+            display_id = doc.get_html_document_id()
             
             # Generate document links (both local and ISIR)
             doc_links = self._generate_document_links(doc)
@@ -469,6 +542,270 @@ class ReportGenerator:
         </table>
     </div>
 """
+        return html
+    
+    def _generate_index_html(self, entity_data: List[Dict]) -> str:
+        """Generate HTML for the index page."""
+        
+        total_entities = len(entity_data)
+        total_documents = sum(e['doc_count'] for e in entity_data)
+        timestamp = datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M:%S UTC')
+        
+        html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISIR Watcher - Entity Overview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .stats-summary {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .summary-box {
+            background-color: #f8f9fa;
+            color: #666;
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .summary-box .number {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-right: 5px;
+        }
+        .summary-box .label {
+            font-size: 13px;
+            color: #7f8c8d;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            vertical-align: top;
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        .entity-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        .entity-link {
+            color: #3498db;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+        .entity-link:hover {
+            color: #2980b9;
+            text-decoration: underline;
+        }
+        .entity-name-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .isir-badge {
+            color: #9c27b0;
+            text-decoration: none;
+            padding: 3px 8px;
+            background-color: #f3e5f5;
+            border-radius: 3px;
+            font-size: 11px;
+            display: inline-block;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        .isir-badge:hover {
+            background-color: #e1bee7;
+        }
+        .doc-count {
+            text-align: center;
+            font-weight: 600;
+            color: #27ae60;
+        }
+        .latest-doc {
+            color: #666;
+            font-size: 14px;
+        }
+        .latest-date {
+            color: #7f8c8d;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .doc-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .doc-list li {
+            padding: 4px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .doc-list li:last-child {
+            border-bottom: none;
+        }
+        .doc-date-inline {
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        .doc-list li strong {
+            color: #2c3e50;
+            margin-right: 6px;
+        }
+        .no-docs {
+            color: #95a5a6;
+            font-style: italic;
+        }
+        .last-modified {
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .footer {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            color: #7f8c8d;
+            font-size: 12px;
+            text-align: center;
+        }
+        .footer a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 ISIR Watcher - Entity Overview</h1>
+        <div class="subtitle">Monitoring insolvency proceedings in the Czech Republic with changes notifications</div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Entity Name</th>
+                    <th>Documents</th>
+                    <th>Latest Documents (3)</th>
+                    <th>Last Modified</th>
+                </tr>
+            </thead>
+            <tbody>
+"""
+        
+        for data in entity_data:
+            entity = data['entity']
+            doc_count = data['doc_count']
+            latest_docs = data['latest_docs']
+            
+            # Format latest documents
+            if latest_docs:
+                docs_html = '<ul class="doc-list">'
+                for section_letter, doc in latest_docs:
+                    # Get HTML-formatted document ID
+                    display_id = doc.get_html_document_id()
+                    
+                    date_str = doc.publish_date.strftime('%d.%m.%Y %H:%M')
+                    desc = doc.description[:45] + "..." if len(doc.description) > 45 else doc.description
+                    docs_html += f'<li><span class="doc-date-inline">{date_str}</span><strong>{display_id}</strong> {desc}</li>'
+                docs_html += '</ul>'
+            else:
+                docs_html = '<span class="no-docs">No documents</span>'
+            
+            # Format last modified
+            last_modified_str = entity.last_modified.strftime('%d.%m.%Y %H:%M') if entity.last_modified else 'Never'
+            
+            # ISIR link
+            isir_url = f"https://isir.justice.cz/isir/ueu/evidence_upadcu_detail.do?id={entity.isir_id}"
+            
+            html += f"""
+                <tr>
+                    <td>
+                        <div class="entity-name-cell">
+                            <a href="{entity.isir_id}.html" class="entity-link">{entity.name}</a>
+                            <a href="{isir_url}" target="_blank" class="isir-badge" title="View on ISIR">ISIR</a>
+                        </div>
+                    </td>
+                    <td class="doc-count">{doc_count}</td>
+                    <td class="latest-doc">{docs_html}</td>
+                    <td class="last-modified">{last_modified_str}</td>
+                </tr>
+"""
+        
+        html += """
+            </tbody>
+        </table>
+        
+        <div class="stats-summary">
+            <div class="summary-box">
+                <span class="number">""" + str(total_entities) + """</span>
+                <span class="label">Watched Entities</span>
+            </div>
+            <div class="summary-box">
+                <span class="number">""" + str(total_documents) + """</span>
+                <span class="label">Total Documents</span>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Generated on """ + timestamp + """ by <a href="https://github.com/adamjezek98/isir-watcher" target="_blank">ISIR Watcher</a>
+        </div>
+    </div>
+</body>
+</html>
+"""
+        
         return html
     
     def generate_changelog(self, changes: List[Dict]):

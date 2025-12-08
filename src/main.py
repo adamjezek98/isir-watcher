@@ -94,7 +94,8 @@ def process_documents(
                         'change_type': 'deleted',
                         'document_id': isir_doc_id,
                         'document_type': scraped_doc.get('document_type'),
-                        'description': scraped_doc.get('description')
+                        'description': scraped_doc.get('description'),
+                        'publish_date': scraped_doc.get('publish_date'),
                     })
                 break
         
@@ -147,7 +148,8 @@ def process_documents(
                         'change_type': 'new',
                         'document_id': isir_doc_id,
                         'document_type': scraped_doc.get('document_type'),
-                        'description': scraped_doc.get('description')
+                        'description': scraped_doc.get('description'),
+                        'publish_date': scraped_doc.get('publish_date'),
                     })
                 else:
                     logger.info(f"New document found (already deleted): {isir_doc_id} for entity {entity.name}")
@@ -157,7 +159,8 @@ def process_documents(
                         'change_type': 'new',
                         'document_id': isir_doc_id,
                         'document_type': scraped_doc.get('document_type'),
-                        'description': scraped_doc.get('description')
+                        'description': scraped_doc.get('description'),
+                        'publish_date': scraped_doc.get('publish_date'),
                     })
             else:
                 if is_scraped_deleted:
@@ -170,7 +173,8 @@ def process_documents(
                     'change_type': 'new',
                     'document_id': isir_doc_id,
                     'document_type': scraped_doc.get('document_type'),
-                    'description': scraped_doc.get('description')
+                    'description': scraped_doc.get('description'),
+                    'publish_date': scraped_doc.get('publish_date'),
                 })
     
     return changes
@@ -239,6 +243,23 @@ def check_entity(db: Session, entity: WatchedEntity) -> List[Dict]:
         # Update last_checked timestamp
         entity.last_checked = datetime.now(timezone.utc)
         
+        # Update last_modified if there were any changes
+        # Use the latest publish_date from changes, fallback to now if not available
+        if all_changes:
+            # Get all publish dates from changes
+            change_dates = [
+                change.get('publish_date') 
+                for change in all_changes 
+                if change.get('publish_date')
+            ]
+            
+            if change_dates:
+                # Use the latest document publish date as last_modified
+                entity.last_modified = max(change_dates)
+            else:
+                # Fallback to now if no publish dates available
+                entity.last_modified = datetime.now(timezone.utc)
+        
         # Commit all changes
         db.commit()
         
@@ -283,6 +304,9 @@ def run_checks():
             except Exception as e:
                 logger.error(f"Error checking entity {entity.name}: {e}", exc_info=True)
                 continue
+        
+        # Generate index page with all entities
+        report_gen.generate_index(db)
         
         # Generate changelog if there were any changes
         if all_changes:

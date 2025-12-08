@@ -60,12 +60,34 @@ class DocumentFieldsMixin:
     # HTTP status codes from download attempts
     download = Column(Integer, nullable=True)  # HTTP status code for main document
     side_download = Column(Integer, nullable=True)  # HTTP status code for side document
+    
+    def get_html_document_id(self):
+        """
+        Get HTML-formatted document ID with section letter and non-breaking characters.
+        
+        Returns:
+            str: HTML-formatted document ID (e.g., "A&nbsp;&#8209;&nbsp;1.")
+        """
+        # Get section letter from the class (must be defined in subclasses)
+        section_letter = getattr(self.__class__, 'SECTION_LETTER', '')
+        
+        # Format ID with section letter (only for A/B/D, C/P already has it)
+        if section_letter in ['A', 'B', 'D']:
+            display_id = f"{section_letter} - {self.isir_document_id}"
+        else:
+            display_id = self.isir_document_id
+        
+        # Replace all spaces with non-breaking spaces and dash with non-breaking hyphen
+        display_id = display_id.replace(' ', '&nbsp;').replace('-', '&#8209;')
+        
+        return display_id
 
 
 class BeforeBankruptcyDocument(DocumentFieldsMixin, Base):
     """Documents from before bankruptcy."""
     
     __tablename__ = "before_bankruptcy_documents"
+    SECTION_LETTER = 'A'
     
     # Relationships
     watched_entity = relationship("WatchedEntity", back_populates="before_bankruptcy_docs")
@@ -78,6 +100,7 @@ class AfterBankruptcyDocument(DocumentFieldsMixin, Base):
     """Documents from after bankruptcy."""
     
     __tablename__ = "after_bankruptcy_documents"
+    SECTION_LETTER = 'B'
     
     # Relationships
     watched_entity = relationship("WatchedEntity", back_populates="after_bankruptcy_docs")
@@ -90,6 +113,7 @@ class OtherDocument(DocumentFieldsMixin, Base):
     """Other documents not categorized as before or after bankruptcy."""
     
     __tablename__ = "other_documents"
+    SECTION_LETTER = 'D'
     
     # Relationships
     watched_entity = relationship("WatchedEntity", back_populates="other_docs")
@@ -102,6 +126,7 @@ class ApplicationDocument(DocumentFieldsMixin, Base):
     """Application document with additional creditor field."""
     
     __tablename__ = "application_documents"
+    SECTION_LETTER = 'P'
     
     # Additional fields specific to applications
     creditor = Column(String(255), nullable=True)
@@ -117,6 +142,7 @@ class DisputeDocument(DocumentFieldsMixin, Base):
     """Dispute document with additional dispute number field."""
     
     __tablename__ = "dispute_documents"
+    SECTION_LETTER = 'C'
     
     # Additional fields specific to disputes
     dispute_number = Column(String(255), nullable=True)

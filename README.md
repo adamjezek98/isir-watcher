@@ -96,9 +96,10 @@ python -m src.main
 This will:
 1. Check all watched entities for document changes
 2. Update the database with new/modified/deleted documents
-3. Generate HTML reports in `output/`
-4. Create `changelog.txt` if changes were detected
-5. Download all pending PDF documents to `output/documents/`
+3. Generate HTML reports in `output/` for each entity
+4. Generate an index page (`output/index.html`) with entity overview
+5. Create `changelog.txt` if changes were detected
+6. Download all pending PDF documents to `output/documents/`
 
 ## Automation
 
@@ -260,14 +261,27 @@ DOWNLOAD_TIMEOUT=30
 
 ## Output Files
 
+### Index Page
+
+An overview page (`output/index.html`) with:
+- List of all watched entities (sorted by last modified)
+- Total document counts per entity
+- Latest 3 documents per entity with dates and descriptions
+- Last modified timestamp (when the entity last had changes)
+- Clickable entity names linking to individual reports
+- Direct links to ISIR website for each entity (ISIR badge)
+- Responsive design for easy navigation
+
 ### HTML Reports
 
 Each entity gets an HTML report (`output/{entity_isir_id}.html`) with:
 - Entity name and ISIR ID
-- Summary statistics
-- Tabular view of all documents
-- Document status badges (active/deleted)
-- Links to downloaded PDFs
+- Direct link to ISIR website
+- Summary statistics (clickable to jump to sections)
+- Latest 10 documents across all sections
+- Tabular view of all documents by section (A/B/C/D/P)
+- Red highlighting for deleted documents
+- Links to downloaded PDFs and original ISIR PDFs
 - Responsive design for mobile viewing
 
 ### Changelog
