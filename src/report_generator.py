@@ -820,9 +820,13 @@ class ReportGenerator:
                 - document_id: ISIR document ID
                 - document_type: Type of document
                 - description: Document description
+                - silent: If True, skip this change in changelog
         """
+        # Filter out silent entities
+        changes = [c for c in changes if not c.get('silent', False)]
+        
         if not changes:
-            logger.info("No changes to report")
+            logger.info("No changes to report (all changes are from silent entities)")
             return
         
         changelog_path = self.output_dir / "changelog.txt"

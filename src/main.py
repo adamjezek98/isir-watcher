@@ -96,6 +96,7 @@ def process_documents(
                         'document_type': scraped_doc.get('document_type'),
                         'description': scraped_doc.get('description'),
                         'publish_date': scraped_doc.get('publish_date'),
+                        'silent': entity.silent,
                     })
                 break
         
@@ -150,6 +151,7 @@ def process_documents(
                         'document_type': scraped_doc.get('document_type'),
                         'description': scraped_doc.get('description'),
                         'publish_date': scraped_doc.get('publish_date'),
+                        'silent': entity.silent,
                     })
                 else:
                     logger.info(f"New document found (already deleted): {isir_doc_id} for entity {entity.name}")
@@ -161,6 +163,7 @@ def process_documents(
                         'document_type': scraped_doc.get('document_type'),
                         'description': scraped_doc.get('description'),
                         'publish_date': scraped_doc.get('publish_date'),
+                        'silent': entity.silent,
                     })
             else:
                 if is_scraped_deleted:
@@ -175,6 +178,7 @@ def process_documents(
                     'document_type': scraped_doc.get('document_type'),
                     'description': scraped_doc.get('description'),
                     'publish_date': scraped_doc.get('publish_date'),
+                    'silent': entity.silent,
                 })
     
     return changes

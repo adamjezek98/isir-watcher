@@ -1,7 +1,7 @@
 """SQLAlchemy models for the ISIR Watcher application."""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, UniqueConstraint, Boolean
 from sqlalchemy.orm import relationship
 from src.database import Base
 
@@ -21,6 +21,9 @@ class WatchedEntity(Base):
     # Tracking information
     last_checked = Column(DateTime, nullable=True)
     last_modified = Column(DateTime, nullable=True)
+    
+    # Silent mode - if True, changes won't be included in changelog
+    silent = Column(Boolean, nullable=False, default=False)
     
     # Relationships to document types
     before_bankruptcy_docs = relationship("BeforeBankruptcyDocument", back_populates="watched_entity", cascade="all, delete-orphan")
