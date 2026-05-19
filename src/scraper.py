@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 ISIR_BASE_URL = "https://isir.justice.cz/isir/ueu/evidence_upadcu_detail.do"
 
 
+class NotFoundError(Exception):
+    """Raised when the ISIR entity page does not exist (invalid link)."""
+
+
 class ISIRScraper:
     """Scraper for extracting document information from ISIR website."""
     
@@ -49,6 +53,10 @@ class ISIRScraper:
             if not response.text or len(response.text) < 100:
                 logger.error(f"Received empty or too short response for entity {isir_id}")
                 return None
+
+            if "Zvolili jste neplatný odkaz." in response.text:
+                logger.error(f"Invalid link for entity {isir_id}")
+                raise NotFoundError(f"Invalid link for entity {isir_id}")
             
             soup = BeautifulSoup(response.text, 'html.parser')
             return soup

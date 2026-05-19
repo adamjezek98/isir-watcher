@@ -31,8 +31,9 @@ class ReportGenerator:
         self.documents_dir.mkdir(exist_ok=True)
         logger.info(f"Output directories ensured: {self.output_dir}")
     
-    def generate_index(self, db: Session):
+    def generate_index(self, db: Session, invalid_link_isir_ids: set = None):
         """Generate index page with overview of all watched entities."""
+        invalid_link_isir_ids = invalid_link_isir_ids or set()
         logger.info("Generating index page")
         
         # Get all watched entities sorted by last_modified
@@ -92,7 +93,8 @@ class ReportGenerator:
             entity_data.append({
                 'entity': entity,
                 'doc_count': doc_count,
-                'latest_docs': latest_docs
+                'latest_docs': latest_docs,
+                'invalid_link': entity.isir_id in invalid_link_isir_ids,
             })
         
         # Generate HTML
@@ -103,7 +105,9 @@ class ReportGenerator:
         index_path.write_text(html, encoding='utf-8')
         logger.info(f"Index page generated: {index_path}")
     
-    def generate_entity_report(self, db: Session, entity: WatchedEntity):
+    def generate_entity_report(
+        self, db: Session, entity: WatchedEntity, invalid_link: bool = False
+    ):
         """Generate HTML report for a single entity."""
         logger.info(f"Generating report for entity: {entity.name}")
         
@@ -135,7 +139,8 @@ class ReportGenerator:
             after_bankruptcy,
             other_docs,
             applications,
-            disputes
+            disputes,
+            invalid_link=invalid_link,
         )
         
         # Write to file
@@ -150,12 +155,23 @@ class ReportGenerator:
         after_bankruptcy: List,
         other_docs: List,
         applications: List,
-        disputes: List
+        disputes: List,
+        invalid_link: bool = False,
     ) -> str:
         """Generate HTML content for entity report."""
         
         # Generate ISIR URL for this entity
         isir_url = f"https://isir.justice.cz/isir/ueu/evidence_upadcu_detail.do?id={entity.isir_id}"
+
+        invalid_link_banner = ""
+        if invalid_link:
+            invalid_link_banner = """
+    <div class="invalid-link-warning">
+        <strong>Invalid ISIR link</strong>
+        The configured ISIR ID no longer resolves to a valid entity page
+        (ISIR reports &quot;Zvolili jste neplatný odkaz.&quot;). Update or remove this watched entity.
+    </div>
+"""
         
         html = f"""<!DOCTYPE html>
 <html lang="cs">
@@ -313,6 +329,19 @@ class ReportGenerator:
         .latest-highlight {{
             background-color: #fff9c4;
         }}
+        .invalid-link-warning {{
+            background-color: #ffebee;
+            border: 2px solid #c62828;
+            color: #b71c1c;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }}
+        .invalid-link-warning strong {{
+            display: block;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }}
     </style>
 </head>
 <body>
@@ -325,7 +354,7 @@ class ReportGenerator:
             <div>Report Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')} UTC</div>
         </div>
     </div>
-    
+{invalid_link_banner}
     <div class="section">
         <h2>Summary</h2>
         <div class="stats">
@@ -549,6 +578,7 @@ class ReportGenerator:
         
         total_entities = len(entity_data)
         total_documents = sum(e['doc_count'] for e in entity_data)
+        invalid_link_entities = [e for e in entity_data if e.get('invalid_link')]
         timestamp = datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M:%S UTC')
         
         html = """<!DOCTYPE html>
@@ -725,13 +755,60 @@ class ReportGenerator:
         .footer a:hover {
             text-decoration: underline;
         }
+        .invalid-link-warning {
+            background-color: #ffebee;
+            border: 2px solid #c62828;
+            color: #b71c1c;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .invalid-link-warning strong {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        .invalid-link-warning ul {
+            margin: 8px 0 0 20px;
+        }
+        tr.invalid-link-row {
+            background-color: #ffebee;
+        }
+        tr.invalid-link-row:hover {
+            background-color: #ffcdd2;
+        }
+        .invalid-link-badge {
+            color: #b71c1c;
+            background-color: #ffcdd2;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📊 ISIR Watcher - Entity Overview</h1>
         <div class="subtitle">Monitoring insolvency proceedings in the Czech Republic with changes notifications</div>
+"""
         
+        if invalid_link_entities:
+            entity_links = ''.join(
+                f'<li><a href="{e["entity"].isir_id}.html">{e["entity"].name}</a></li>'
+                for e in invalid_link_entities
+            )
+            html += f"""
+        <div class="invalid-link-warning">
+            <strong>Invalid ISIR links ({len(invalid_link_entities)})</strong>
+            The following watched entities have ISIR IDs that no longer resolve to a valid page
+            (ISIR reports &quot;Zvolili jste neplatný odkaz.&quot;). Update or remove them.
+            <ul>{entity_links}</ul>
+        </div>
+"""
+        
+        html += """
         <table>
             <thead>
                 <tr>
@@ -748,6 +825,7 @@ class ReportGenerator:
             entity = data['entity']
             doc_count = data['doc_count']
             latest_docs = data['latest_docs']
+            invalid_link = data.get('invalid_link', False)
             
             # Format latest documents
             if latest_docs:
@@ -769,11 +847,17 @@ class ReportGenerator:
             # ISIR link
             isir_url = f"https://isir.justice.cz/isir/ueu/evidence_upadcu_detail.do?id={entity.isir_id}"
             
+            row_class = ' class="invalid-link-row"' if invalid_link else ''
+            invalid_badge = (
+                '<span class="invalid-link-badge" title="Invalid ISIR link">Invalid link</span>'
+                if invalid_link else ''
+            )
             html += f"""
-                <tr>
+                <tr{row_class}>
                     <td>
                         <div class="entity-name-cell">
                             <a href="{entity.isir_id}.html" class="entity-link">{entity.name}</a>
+                            {invalid_badge}
                             <a href="{isir_url}" target="_blank" class="isir-badge" title="View on ISIR">ISIR</a>
                         </div>
                     </td>
@@ -816,14 +900,17 @@ class ReportGenerator:
             changes: List of change dictionaries with keys:
                 - entity_name: Name of the watched entity
                 - entity_isir_id: ISIR ID of the entity
-                - change_type: 'new', 'updated', 'deleted'
+                - change_type: 'new', 'updated', 'deleted', 'INVALID_LINK'
                 - document_id: ISIR document ID
                 - document_type: Type of document
                 - description: Document description
                 - silent: If True, skip this change in changelog
         """
-        # Filter out silent entities
-        changes = [c for c in changes if not c.get('silent', False)]
+        # Filter out silent entities (INVALID_LINK is always included)
+        changes = [
+            c for c in changes
+            if c.get('change_type') == 'INVALID_LINK' or not c.get('silent', False)
+        ]
         
         if not changes:
             logger.info("No changes to report (all changes are from silent entities)")
@@ -860,9 +947,15 @@ class ReportGenerator:
             changelog += "\n"
             
             # Count changes by type
+            invalid_links = [c for c in entity_changes if c['change_type'] == 'INVALID_LINK']
             new_docs = [c for c in entity_changes if c['change_type'] == 'new']
             updated_docs = [c for c in entity_changes if c['change_type'] == 'updated']
             deleted_docs = [c for c in entity_changes if c['change_type'] == 'deleted']
+
+            if invalid_links:
+                changelog += "ERROR: INVALID ISIR LINK\n"
+                changelog += "  The configured ISIR ID no longer resolves to a valid entity page.\n\n"
+
             
             if new_docs:
                 changelog += f"NEW DOCUMENTS ({len(new_docs)}):\n"

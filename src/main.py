@@ -14,7 +14,7 @@ from src.models import (
     ApplicationDocument,
     DisputeDocument
 )
-from src.scraper import ISIRScraper
+from src.scraper import ISIRScraper, NotFoundError
 from src.report_generator import ReportGenerator
 from src.downloader import DocumentDownloader
 
@@ -197,7 +197,15 @@ def check_entity(db: Session, entity: WatchedEntity) -> List[Dict]:
     
     try:
         # Scrape documents from ISIR website
-        scraped_data = scraper.scrape_entity_documents(entity.isir_id)
+        try:
+            scraped_data = scraper.scrape_entity_documents(entity.isir_id)
+        except NotFoundError as e:
+            logger.error(f"Error scraping documents for entity {entity.name}: {e}")
+            return [{
+                'entity_name': entity.name,
+                'entity_isir_id': entity.isir_id,
+                'change_type': 'INVALID_LINK',
+            }]
         
         if not scraped_data:
             logger.warning(f"No data scraped for entity {entity.name}")
@@ -296,21 +304,27 @@ def run_checks():
         
         logger.info(f"Found {len(entities)} entities to check")
         
+        invalid_link_isir_ids = set()
+        
         # Check each entity and collect changes
         for entity in entities:
             try:
                 changes = check_entity(db, entity)
                 all_changes.extend(changes)
                 
-                # Generate HTML report for this entity
-                report_gen.generate_entity_report(db, entity)
+                invalid_link = any(
+                    c.get('change_type') == 'INVALID_LINK' for c in changes
+                )
+                if invalid_link:
+                    invalid_link_isir_ids.add(entity.isir_id)
+                report_gen.generate_entity_report(db, entity, invalid_link=invalid_link)
                 
             except Exception as e:
                 logger.error(f"Error checking entity {entity.name}: {e}", exc_info=True)
                 continue
         
         # Generate index page with all entities
-        report_gen.generate_index(db)
+        report_gen.generate_index(db, invalid_link_isir_ids=invalid_link_isir_ids)
         
         # Generate changelog if there were any changes
         if all_changes:
