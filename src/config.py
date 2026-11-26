@@ -23,6 +23,10 @@ OUTPUT_DIR = os.getenv('OUTPUT_DIR', 'output')
 MAX_DOWNLOAD_RETRIES = int(os.getenv('MAX_DOWNLOAD_RETRIES', '3'))
 DOWNLOAD_TIMEOUT = int(os.getenv('DOWNLOAD_TIMEOUT', '30'))
 
+# Number of consecutive failed checks (invalid ISIR link) before the error
+# is reported in the changelog. Transient failures below this are suppressed.
+INVALID_LINK_THRESHOLD = int(os.getenv('INVALID_LINK_THRESHOLD', '10'))
+
 
 def get_report_url(entity_isir_id: str) -> str:
     """

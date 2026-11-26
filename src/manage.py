@@ -96,6 +96,7 @@ def show_entity_details(isir_id: str):
         print(f"ISIR ID: {entity.isir_id}")
         print(f"Last Checked: {entity.last_checked}")
         print(f"Last Modified: {entity.last_modified}")
+        print(f"Consecutive Invalid-Link Failures: {entity.consecutive_failures}")
         
         # Count documents by type
         print(f"\nDocuments:")

@@ -200,16 +200,30 @@ def check_entity(db: Session, entity: WatchedEntity) -> List[Dict]:
         try:
             scraped_data = scraper.scrape_entity_documents(entity.isir_id)
         except NotFoundError as e:
-            logger.error(f"Error scraping documents for entity {entity.name}: {e}")
+            entity.consecutive_failures = (entity.consecutive_failures or 0) + 1
+            db.commit()
+            logger.error(
+                f"Error scraping documents for entity {entity.name} "
+                f"(consecutive failures: {entity.consecutive_failures}): {e}"
+            )
             return [{
                 'entity_name': entity.name,
                 'entity_isir_id': entity.isir_id,
                 'change_type': 'INVALID_LINK',
+                'consecutive_failures': entity.consecutive_failures,
             }]
         
         if not scraped_data:
             logger.warning(f"No data scraped for entity {entity.name}")
             return all_changes
+        
+        # Link resolved again - reset the failure counter
+        if entity.consecutive_failures:
+            logger.info(
+                f"Entity {entity.name} recovered after "
+                f"{entity.consecutive_failures} consecutive failures"
+            )
+            entity.consecutive_failures = 0
         
         # Process each document type and collect changes
         changes = process_documents(

@@ -12,7 +12,7 @@ from src.models import (
     ApplicationDocument,
     DisputeDocument,
 )
-from src.config import get_report_url
+from src.config import get_report_url, INVALID_LINK_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -906,14 +906,18 @@ class ReportGenerator:
                 - description: Document description
                 - silent: If True, skip this change in changelog
         """
-        # Filter out silent entities (INVALID_LINK is always included)
-        changes = [
-            c for c in changes
-            if c.get('change_type') == 'INVALID_LINK' or not c.get('silent', False)
-        ]
+        # Filter out silent entities (INVALID_LINK is always included, but only
+        # once it has persisted for INVALID_LINK_THRESHOLD consecutive checks,
+        # so transient failures don't create notification noise)
+        def _include(c):
+            if c.get('change_type') == 'INVALID_LINK':
+                return c.get('consecutive_failures', INVALID_LINK_THRESHOLD) >= INVALID_LINK_THRESHOLD
+            return not c.get('silent', False)
+        
+        changes = [c for c in changes if _include(c)]
         
         if not changes:
-            logger.info("No changes to report (all changes are from silent entities)")
+            logger.info("No changes to report (all changes are from silent entities or transient link failures)")
             return
         
         changelog_path = self.output_dir / "changelog.txt"
@@ -953,8 +957,12 @@ class ReportGenerator:
             deleted_docs = [c for c in entity_changes if c['change_type'] == 'deleted']
 
             if invalid_links:
+                failures = invalid_links[0].get('consecutive_failures')
                 changelog += "ERROR: INVALID ISIR LINK\n"
-                changelog += "  The configured ISIR ID no longer resolves to a valid entity page.\n\n"
+                changelog += "  The configured ISIR ID no longer resolves to a valid entity page"
+                if failures:
+                    changelog += f" (failed {failures} consecutive checks)"
+                changelog += ".\n\n"
 
             
             if new_docs:

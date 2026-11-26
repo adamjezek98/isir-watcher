@@ -25,6 +25,10 @@ class WatchedEntity(Base):
     # Silent mode - if True, changes won't be included in changelog
     silent = Column(Boolean, nullable=False, default=False)
     
+    # Number of consecutive checks where the ISIR link was invalid (reset on success).
+    # Used to suppress transient INVALID_LINK errors from the changelog.
+    consecutive_failures = Column(Integer, nullable=False, default=0)
+    
     # Relationships to document types
     before_bankruptcy_docs = relationship("BeforeBankruptcyDocument", back_populates="watched_entity", cascade="all, delete-orphan")
     after_bankruptcy_docs = relationship("AfterBankruptcyDocument", back_populates="watched_entity", cascade="all, delete-orphan")
